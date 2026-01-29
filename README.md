@@ -29,7 +29,7 @@ A powerful macOS menu bar application that provides AI-powered grammar correctio
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/altgrammarly.git
+   git clone https://github.com/varunmitra/altgrammarly.git
    cd altgrammarly
    ```
 
@@ -224,9 +224,8 @@ Built with:
 
 ## 🆘 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/altgrammarly/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/altgrammarly/discussions)
-- **Email**: your.email@example.com
+- **Issues**: [GitHub Issues](https://github.com/varunmitra/altgrammarly/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/varunmitra/altgrammarly/discussions)
 
 ---
 
