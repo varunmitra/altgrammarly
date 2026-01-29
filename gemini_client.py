@@ -4,9 +4,11 @@ Optimized for speed with Gemini 3 Flash.
 """
 import os
 import logging
+import time
 from typing import Optional
 from google import genai
 from google.genai import types
+from google.genai.errors import ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -173,30 +175,67 @@ class GeminiClient:
             # Build the prompt with system instruction included
             prompt = f"{system_instruction}\n\nText to process:\n{text}"
             
-            # Optimized config for speed:
-            # - Flash model (already fastest available)
-            # - Low thinking_budget for quick responses
-            # - include_thoughts=False to exclude reasoning tokens
-            # - temperature=1.0 for balanced output
-            response = self.client.models.generate_content(
-                model=self.model_id,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(
-                        include_thoughts=False,  # Don't include reasoning, just results
-                        thinking_budget=100      # Minimal token budget for fast response
-                    ),
-                    temperature=1.0
-                )
-            )
+            # Exponential backoff configuration
+            max_retries = 5
+            base_delay = 1.0  # Start with 1 second
             
-            if not response or not response.text:
-                logger.error("Empty response from API")
-                raise Exception("No response received from Gemini API.")
-            
-            result = response.text.strip()
-            logger.info(f"✓ Response received ({len(result)} chars)")
-            return result
+            for attempt in range(max_retries):
+                try:
+                    # Optimized config for speed:
+                    # - Flash model (already fastest available)
+                    # - Low thinking_budget for quick responses
+                    # - include_thoughts=False to exclude reasoning tokens
+                    # - temperature=1.0 for balanced output
+                    response = self.client.models.generate_content(
+                        model=self.model_id,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            thinking_config=types.ThinkingConfig(
+                                include_thoughts=False,  # Don't include reasoning, just results
+                                thinking_budget=100      # Minimal token budget for fast response
+                            ),
+                            temperature=1.0
+                        )
+                    )
+                    
+                    if not response or not response.text:
+                        logger.error("Empty response from API")
+                        raise Exception("No response received from Gemini API.")
+                    
+                    result = response.text.strip()
+                    logger.info(f"✓ Response received ({len(result)} chars)")
+                    return result
+                
+                except ClientError as e:
+                    # Handle rate limiting (429) with exponential backoff
+                    if e.status_code == 429:
+                        if attempt < max_retries - 1:
+                            # Calculate exponential backoff: 1s, 2s, 4s, 8s, 16s
+                            delay = base_delay * (2 ** attempt)
+                            logger.warning(f"⚠️ Rate limit hit (429). Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(delay)
+                            continue
+                        else:
+                            logger.error(f"Rate limit exceeded after {max_retries} retries")
+                            raise Exception(
+                                "Gemini API rate limit exceeded. Please wait a few moments and try again. "
+                                "Free tier: 20 requests/day. Consider upgrading your API plan."
+                            )
+                    else:
+                        # Other client errors (4xx)
+                        logger.error(f"API client error {e.status_code}: {str(e)}")
+                        raise Exception(f"Gemini API error: {str(e)}")
+                
+                except Exception as e:
+                    # Non-ClientError exceptions
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(f"⚠️ Request failed: {str(e)}. Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"Request failed after {max_retries} retries: {str(e)}")
+                        raise
                 
         except Exception as e:
             logger.error(f"API request failed: {str(e)}")
