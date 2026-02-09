@@ -122,7 +122,7 @@ class StandaloneGeminiClient:
         
         logger.info(f"Configuring Genai client with key: {self.api_key[:8]}...{self.api_key[-4:]}")
         self.client = genai.Client(api_key=self.api_key)
-        self.model_id = 'gemini-1.5-flash'
+        self.model_id = 'gemini-2.5-flash'
         logger.info(f"✓ Client initialized with model: {self.model_id}")
     
     def _process_text(self, text, system_instruction):

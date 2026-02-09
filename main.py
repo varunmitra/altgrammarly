@@ -52,7 +52,7 @@ class AltGrammarlyApp(rumps.App):
         
         # Initialize Gemini client
         logger.info("Initializing Gemini client...")
-        self.gemini_client = GeminiClient(model_id='gemini-1.5-flash')
+        self.gemini_client = GeminiClient(model_id='gemini-2.5-flash')
         if self.gemini_client.is_configured():
             logger.info("✓ Gemini API key is configured")
         else:

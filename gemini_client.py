@@ -82,14 +82,14 @@ class InstructionPresets:
 class GeminiClient:
     """Generic wrapper for Google Gemini API with customizable system instructions."""
     
-    def __init__(self, api_key: Optional[str] = None, model_id: str = 'gemini-1.5-flash'):
+    def __init__(self, api_key: Optional[str] = None, model_id: str = 'gemini-2.5-flash'):
         """
         Initialize the Gemini client.
         
         Args:
             api_key: Gemini API key. If None, attempts to load from environment.
-            model_id: Model to use. Defaults to 'gemini-1.5-flash' for speed.
-                     Other options: 'gemini-1.5-pro', 'gemini-3-flash-preview'
+            model_id: Model to use. Defaults to 'gemini-2.5-flash' for speed.
+                     Other options: 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-pro-latest'
         """
         self.api_key = api_key or os.getenv('GEMINI_API_KEY')
         self.model_id = model_id
