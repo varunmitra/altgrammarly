@@ -15,6 +15,7 @@ from dotenv import load_dotenv, set_key, find_dotenv
 from AppKit import NSAlert, NSAlertFirstButtonReturn, NSTextField, NSMakeRect
 
 from gemini_client import GeminiClient
+from context_utils import get_active_window_info, get_persona_for_app, get_context_aware_instruction
 
 
 # Setup logging to file
@@ -61,6 +62,10 @@ class AltGrammarlyApp(rumps.App):
         self.is_processing = False
         self.current_operation = None  # Track which operation is running
         
+        # Context tracking
+        self.current_context = None  # Store active window info
+        self.context_menu_item = None  # Will hold reference to context menu item
+        
         # Setup menu items
         self.setup_menu()
         logger.info("Menu items configured")
@@ -82,9 +87,15 @@ class AltGrammarlyApp(rumps.App):
         else:
             status_item = rumps.MenuItem("⚠ API Key Not Set", callback=None)
         
+        # Context display (disabled, updated by timer)
+        self.context_menu_item = rumps.MenuItem("Context: Detecting...", callback=None)
+        
         # Menu items
         self.menu = [
             status_item,
+            self.context_menu_item,
+            None,  # Separator
+            rumps.MenuItem("🪄 Magic Action", callback=self.magic_action),
             None,  # Separator
             rumps.MenuItem("Set Gemini API Key", callback=self.set_api_key),
             rumps.MenuItem("Test Connection", callback=self.test_connection),
@@ -100,6 +111,142 @@ class AltGrammarlyApp(rumps.App):
             None,  # Separator
             rumps.MenuItem("Quit", callback=self.quit_app)
         ]
+    
+    @rumps.timer(2)
+    def update_context(self, _):
+        """Timer callback to update context display every 2 seconds."""
+        try:
+            window_info = get_active_window_info()
+            
+            if window_info:
+                app_name = window_info.get('app_name', 'Unknown')
+                persona = get_persona_for_app(app_name)
+                
+                # Update the stored context
+                self.current_context = {
+                    'app_name': app_name,
+                    'persona': persona
+                }
+                
+                # Update menu item
+                if persona:
+                    self.context_menu_item.title = f"Context: {app_name} ({persona})"
+                else:
+                    self.context_menu_item.title = f"Context: {app_name}"
+                    
+                logger.debug(f"Context updated: {app_name} -> {persona}")
+            else:
+                self.context_menu_item.title = "Context: Unable to detect"
+                self.current_context = None
+                
+        except Exception as e:
+            logger.error(f"Failed to update context: {e}")
+            self.context_menu_item.title = "Context: Error"
+    
+    def magic_action(self, _):
+        """
+        Magic Action: Intelligently process clipboard content based on active app context.
+        Detects the active app, applies the appropriate persona, and processes the text.
+        """
+        logger.info("=" * 60)
+        logger.info("MAGIC ACTION TRIGGERED")
+        logger.info("=" * 60)
+        
+        if self.is_processing:
+            logger.warning("Already processing another request")
+            self.show_notification("Busy", "Please wait for the current operation to complete.")
+            return
+        
+        if not self.gemini_client.is_configured():
+            logger.error("API key not configured")
+            self.show_notification("Error", "Please configure your Gemini API key first.")
+            return
+        
+        # Run in separate thread to not block UI
+        threading.Thread(target=self._magic_action_worker, daemon=True).start()
+    
+    def _magic_action_worker(self):
+        """Worker thread for magic action processing."""
+        self.is_processing = True
+        
+        try:
+            # Step 1: Get active window context
+            logger.info("Step 1: Detecting active window context...")
+            window_info = get_active_window_info()
+            
+            if window_info:
+                app_name = window_info.get('app_name', 'Unknown')
+                persona = get_persona_for_app(app_name)
+                logger.info(f"✓ Active app: {app_name}")
+                logger.info(f"✓ Persona: {persona or 'None (using default)'}")
+            else:
+                app_name = "Unknown"
+                persona = None
+                logger.warning("⚠ Could not detect active window, using default instruction")
+            
+            # Step 2: Get clipboard content
+            logger.info("Step 2: Reading clipboard content...")
+            original_text = pyperclip.paste()
+            
+            if not original_text or not original_text.strip():
+                logger.warning("No text in clipboard")
+                self.show_notification("No Text", "Please copy some text to clipboard first.")
+                return
+            
+            logger.info(f"✓ Clipboard content: {len(original_text)} characters")
+            logger.info(f"Text preview: '{original_text[:100]}{'...' if len(original_text) > 100 else ''}'")
+            
+            # Step 3: Prepare context-aware instruction
+            logger.info("Step 3: Preparing context-aware instruction...")
+            
+            # Use grammar correction as base instruction
+            from gemini_client import InstructionPresets
+            base_instruction = InstructionPresets.GRAMMAR_CORRECTION
+            
+            if persona:
+                # Enhance with persona
+                enhanced_instruction = f"You are a {persona}. {base_instruction}"
+                logger.info(f"✓ Enhanced instruction with persona: {persona}")
+            else:
+                enhanced_instruction = base_instruction
+                logger.info("✓ Using base instruction (no persona enhancement)")
+            
+            # Step 4: Process with Gemini
+            logger.info("Step 4: Processing with Gemini API...")
+            processed_text = self.gemini_client.process(
+                original_text,
+                enhanced_instruction,
+                operation=f"magic action ({app_name})"
+            )
+            
+            logger.info(f"✓ Received processed text ({len(processed_text)} chars)")
+            logger.info(f"Processed preview: '{processed_text[:100]}{'...' if len(processed_text) > 100 else ''}'")
+            
+            # Step 5: Update clipboard
+            logger.info("Step 5: Updating clipboard with processed text...")
+            pyperclip.copy(processed_text)
+            logger.info("✓ Clipboard updated")
+            
+            # Success notification
+            logger.info("=" * 60)
+            logger.info(f"MAGIC ACTION COMPLETE for {app_name}")
+            logger.info("=" * 60)
+            
+            notification_msg = f"Processed for {app_name}"
+            if persona:
+                notification_msg += f" ({persona})"
+            
+            self.show_notification("Magic Action Complete! ✨", notification_msg)
+            
+        except ValueError as e:
+            logger.error(f"Configuration error: {e}")
+            self.show_notification("Configuration Error", str(e))
+        except Exception as e:
+            logger.error(f"Error during magic action: {e}", exc_info=True)
+            self.show_notification("Error", f"Failed to process: {str(e)}")
+        finally:
+            self.is_processing = False
+            logger.info("Magic action workflow complete.")
     
     def start_hotkey_listener(self):
         """Start listening for global hotkeys (Ctrl+Cmd+1 through 6)."""
