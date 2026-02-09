@@ -255,7 +255,9 @@ class GeminiClient:
                 
                 except ClientError as e:
                     # Handle rate limiting (429) with exponential backoff
-                    if e.status_code == 429:
+                    status_code = getattr(e, 'status_code', None) or getattr(e, 'code', None)
+                    
+                    if status_code == 429:
                         if attempt < max_retries - 1:
                             # Calculate exponential backoff: 1s, 2s, 4s, 8s, 16s
                             delay = base_delay * (2 ** attempt)
@@ -270,7 +272,7 @@ class GeminiClient:
                             )
                     else:
                         # Other client errors (4xx)
-                        logger.error(f"API client error {e.status_code}: {str(e)}")
+                        logger.error(f"API client error: {str(e)}")
                         raise Exception(f"Gemini API error: {str(e)}")
                 
                 except Exception as e:
