@@ -1,11 +1,11 @@
 """
-Gemini API client wrapper for grammar and style correction.
-Optimized for speed with Gemini 3 Flash.
+Gemini API client wrapper for text processing.
+Optimized for speed with Gemini Flash models.
 """
 import os
 import logging
 import time
-from typing import Optional
+from typing import Optional, Dict
 from google import genai
 from google.genai import types
 from google.genai.errors import ClientError
@@ -13,17 +13,18 @@ from google.genai.errors import ClientError
 logger = logging.getLogger(__name__)
 
 
-class GeminiClient:
-    """Wrapper for Google Gemini API to provide fast grammar and style corrections."""
+class InstructionPresets:
+    """Predefined system instruction presets for common use cases."""
     
-    SYSTEM_INSTRUCTION_CORRECT = (
+    # Grammar and style editing presets
+    GRAMMAR_CORRECTION = (
         "You are an expert technical editor. Correct the grammar and improve the "
         "clarity of the following text while maintaining a professional, "
         "software-engineer-friendly tone. Return ONLY the corrected text without "
         "any explanations, comments, or markdown formatting."
     )
     
-    SYSTEM_INSTRUCTION_SHORTEN = (
+    SHORTEN = (
         "You are an expert technical editor. Make the following text more succinct "
         "and to-the-point while correcting any grammar errors. Maintain a warm, human "
         "touch and keep it professional but conversational - avoid sounding brusque or "
@@ -32,7 +33,7 @@ class GeminiClient:
         "comments, or markdown formatting."
     )
     
-    SYSTEM_INSTRUCTION_REPHRASE = (
+    REPHRASE = (
         "You are an expert technical editor. Rephrase the following text to improve "
         "clarity and flow while maintaining the same meaning and tone. Use different "
         "words and sentence structures but keep the professional, software-engineer-friendly "
@@ -40,7 +41,7 @@ class GeminiClient:
         "markdown formatting."
     )
     
-    SYSTEM_INSTRUCTION_FORMAL = (
+    FORMAL = (
         "You are an expert technical editor. Rewrite the following text in a more formal "
         "and professional tone suitable for business communication or official documentation. "
         "Maintain clarity and precision while elevating the language. Remove any casual "
@@ -48,7 +49,7 @@ class GeminiClient:
         "comments, or markdown formatting."
     )
     
-    SYSTEM_INSTRUCTION_RESPECTFUL = (
+    RESPECTFUL = (
         "You are an expert technical editor. Rewrite the following text to be more "
         "respectful, considerate, and diplomatic. Soften any harsh language while "
         "maintaining the core message. Use polite phrasing and show empathy. Keep it "
@@ -56,7 +57,7 @@ class GeminiClient:
         "without any explanations, comments, or markdown formatting."
     )
     
-    SYSTEM_INSTRUCTION_POSITIVE = (
+    POSITIVE = (
         "You are an expert technical editor. Rewrite the following text to convey the "
         "message in a more positive and constructive way, even if the original sentiment "
         "is negative or critical. Use tactful language that focuses on solutions and "
@@ -65,19 +66,37 @@ class GeminiClient:
         "or markdown formatting."
     )
     
-    def __init__(self, api_key: Optional[str] = None):
+    # General assistant preset
+    CONTEXTUAL_ASSISTANT = (
+        "You are a helpful, knowledgeable assistant. Provide clear, accurate, and "
+        "contextually appropriate responses. Be concise but thorough. Use a friendly "
+        "yet professional tone. When asked about technical topics, provide practical "
+        "advice. Return your response without unnecessary preambles or explanations "
+        "about your role."
+    )
+    
+    # Backward compatibility aliases
+    CORRECT = GRAMMAR_CORRECTION
+
+
+class GeminiClient:
+    """Generic wrapper for Google Gemini API with customizable system instructions."""
+    
+    def __init__(self, api_key: Optional[str] = None, model_id: str = 'gemini-1.5-flash'):
         """
         Initialize the Gemini client.
         
         Args:
             api_key: Gemini API key. If None, attempts to load from environment.
+            model_id: Model to use. Defaults to 'gemini-1.5-flash' for speed.
+                     Other options: 'gemini-1.5-pro', 'gemini-3-flash-preview'
         """
         self.api_key = api_key or os.getenv('GEMINI_API_KEY')
+        self.model_id = model_id
         
         if not self.api_key:
             logger.warning("No API key found in environment")
             self.client = None
-            self.model_id = None
             return
             
         logger.info(f"Configuring Gemini API with key: {self.api_key[:8]}...{self.api_key[-4:]}")
@@ -85,18 +104,34 @@ class GeminiClient:
         try:
             # Initialize Google Genai client
             self.client = genai.Client(api_key=self.api_key)
-            # Use Flash model for fastest response times (2-3x faster than Pro)
-            self.model_id = 'gemini-3-flash-preview'
-            logger.info(f"✓ Gemini 3 Flash client initialized: {self.model_id}")
+            logger.info(f"✓ Gemini client initialized with model: {self.model_id}")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
             self.client = None
-            self.model_id = None
     
     def is_configured(self) -> bool:
         """Check if the API key is configured."""
         return self.api_key is not None and self.client is not None
     
+    def process(self, text: str, system_instruction: str, operation: str = "processing") -> str:
+        """
+        Generic method to process text with a custom system instruction.
+        
+        Args:
+            text: The text to be processed.
+            system_instruction: The system instruction to guide the model.
+            operation: Description of the operation (for logging).
+            
+        Returns:
+            The processed text.
+            
+        Raises:
+            ValueError: If API key is not configured or text is empty.
+            Exception: If the API request fails.
+        """
+        return self._process_text(text, system_instruction, operation)
+    
+    # Convenience methods using presets
     def correct_text(self, text: str) -> str:
         """
         Send text to Gemini API for grammar and style correction.
@@ -111,7 +146,7 @@ class GeminiClient:
             ValueError: If API key is not configured or text is empty.
             Exception: If the API request fails.
         """
-        return self._process_text(text, self.SYSTEM_INSTRUCTION_CORRECT, "correction")
+        return self._process_text(text, InstructionPresets.GRAMMAR_CORRECTION, "correction")
     
     def shorten_text(self, text: str) -> str:
         """
@@ -127,23 +162,35 @@ class GeminiClient:
             ValueError: If API key is not configured or text is empty.
             Exception: If the API request fails.
         """
-        return self._process_text(text, self.SYSTEM_INSTRUCTION_SHORTEN, "shortening")
+        return self._process_text(text, InstructionPresets.SHORTEN, "shortening")
     
     def rephrase_text(self, text: str) -> str:
         """Rephrase text for better clarity."""
-        return self._process_text(text, self.SYSTEM_INSTRUCTION_REPHRASE, "rephrasing")
+        return self._process_text(text, InstructionPresets.REPHRASE, "rephrasing")
     
     def formalize_text(self, text: str) -> str:
         """Make text more formal and professional."""
-        return self._process_text(text, self.SYSTEM_INSTRUCTION_FORMAL, "formalizing")
+        return self._process_text(text, InstructionPresets.FORMAL, "formalizing")
     
     def respectful_text(self, text: str) -> str:
         """Make text more respectful and diplomatic."""
-        return self._process_text(text, self.SYSTEM_INSTRUCTION_RESPECTFUL, "making respectful")
+        return self._process_text(text, InstructionPresets.RESPECTFUL, "making respectful")
     
     def positive_text(self, text: str) -> str:
         """Frame text more positively and constructively."""
-        return self._process_text(text, self.SYSTEM_INSTRUCTION_POSITIVE, "making positive")
+        return self._process_text(text, InstructionPresets.POSITIVE, "making positive")
+    
+    def ask_assistant(self, text: str) -> str:
+        """
+        Use Gemini as a general-purpose contextual assistant.
+        
+        Args:
+            text: The question or request.
+            
+        Returns:
+            The assistant's response.
+        """
+        return self._process_text(text, InstructionPresets.CONTEXTUAL_ASSISTANT, "assistant query")
     
     def _process_text(self, text: str, system_instruction: str, operation: str) -> str:
         """

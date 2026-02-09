@@ -51,7 +51,7 @@ class AltGrammarlyApp(rumps.App):
         
         # Initialize Gemini client
         logger.info("Initializing Gemini client...")
-        self.gemini_client = GeminiClient()
+        self.gemini_client = GeminiClient(model_id='gemini-1.5-flash')
         if self.gemini_client.is_configured():
             logger.info("✓ Gemini API key is configured")
         else:
@@ -131,17 +131,17 @@ class AltGrammarlyApp(rumps.App):
                         '6': ('positive', '😊 POSITIVE')
                     }
                     
-                        if key.char in operations:
-                            operation, emoji_name = operations[key.char]
-                            logger.info(f"{emoji_name} HOTKEY PRESSED! (Ctrl+Cmd+{key.char})")
-                            if not self.is_processing:
-                                logger.info(f"Processing {operation} hotkey event...")
-                                # Run in separate thread to not block keyboard listener
-                                threading.Thread(target=lambda op=operation: self.handle_hotkey(op), daemon=True).start()
-                            else:
-                                logger.warning("Already processing, ignoring hotkey press (debounce protection)")
-                                # Play a subtle beep to let user know it was ignored
-                                self.show_notification("Busy", "Please wait, processing previous request...")
+                    if key.char in operations:
+                        operation, emoji_name = operations[key.char]
+                        logger.info(f"{emoji_name} HOTKEY PRESSED! (Ctrl+Cmd+{key.char})")
+                        if not self.is_processing:
+                            logger.info(f"Processing {operation} hotkey event...")
+                            # Run in separate thread to not block keyboard listener
+                            threading.Thread(target=lambda op=operation: self.handle_hotkey(op), daemon=True).start()
+                        else:
+                            logger.warning("Already processing, ignoring hotkey press (debounce protection)")
+                            # Play a subtle beep to let user know it was ignored
+                            self.show_notification("Busy", "Please wait, processing previous request...")
                             
             except AttributeError:
                 pass
