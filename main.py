@@ -102,6 +102,7 @@ class AltGrammarlyApp(rumps.App):
             None,  # Separator
             rumps.MenuItem("View Logs", callback=self.view_logs),
             rumps.MenuItem("Hotkeys:", callback=None),  # Header
+            rumps.MenuItem("  ⌃⌘0 - Magic (Context)", callback=None),
             rumps.MenuItem("  ⌃⌘1 - Correct", callback=None),
             rumps.MenuItem("  ⌃⌘2 - Shorten", callback=None),
             rumps.MenuItem("  ⌃⌘3 - Rephrase", callback=None),
@@ -270,6 +271,7 @@ class AltGrammarlyApp(rumps.App):
                     
                     # Map number keys to operations
                     operations = {
+                        '0': ('magic', '🪄 MAGIC'),  # NEW: Context-aware magic action
                         '1': ('correct', '🔥 CORRECTION'),
                         '2': ('shorten', '✂️ SHORTEN'),
                         '3': ('rephrase', '🔄 REPHRASE'),
@@ -300,7 +302,7 @@ class AltGrammarlyApp(rumps.App):
             except:
                 pass
         
-        logger.info("Hotkey combinations registered: Ctrl+Cmd+1-6")
+        logger.info("Hotkey combinations registered: Ctrl+Cmd+0-6")
         
         # Start the listener
         logger.info("Starting keyboard event listener...")
@@ -312,12 +314,13 @@ class AltGrammarlyApp(rumps.App):
         """Handle the hotkey press event.
         
         Args:
-            operation: Operation to perform (correct, shorten, rephrase, formal, respectful, positive)
+            operation: Operation to perform (correct, shorten, rephrase, formal, respectful, positive, magic)
         """
         self.current_operation = operation
         
         # Map operations to display names
         operation_names = {
+            'magic': 'MAGIC (CONTEXT-AWARE)',
             'correct': 'CORRECTION',
             'shorten': 'SHORTENING',
             'rephrase': 'REPHRASING',
@@ -357,7 +360,40 @@ class AltGrammarlyApp(rumps.App):
                 logger.info(f"Step 3: Sending text to Gemini API for {operation}...")
                 
                 # Call the appropriate method based on operation
-                if operation == "correct":
+                if operation == "magic":
+                    # Context-aware magic processing
+                    logger.info("Using context-aware magic processing...")
+                    
+                    # Get active window context
+                    window_info = get_active_window_info()
+                    if window_info:
+                        app_name = window_info.get('app_name', 'Unknown')
+                        persona = get_persona_for_app(app_name)
+                        logger.info(f"✓ Active app: {app_name}, Persona: {persona or 'None'}")
+                    else:
+                        app_name = "Unknown"
+                        persona = None
+                        logger.warning("⚠ Could not detect context")
+                    
+                    # Prepare context-aware instruction
+                    from gemini_client import InstructionPresets
+                    base_instruction = InstructionPresets.GRAMMAR_CORRECTION
+                    
+                    if persona:
+                        enhanced_instruction = f"You are a {persona}. {base_instruction}"
+                        logger.info(f"✓ Enhanced with persona: {persona}")
+                    else:
+                        enhanced_instruction = base_instruction
+                        logger.info("✓ Using base instruction (no persona)")
+                    
+                    # Process with context-aware instruction
+                    processed_text = self.gemini_client.process(
+                        original_text,
+                        enhanced_instruction,
+                        operation=f"magic ({app_name})"
+                    )
+                    
+                elif operation == "correct":
                     processed_text = self.gemini_client.correct_text(original_text)
                 elif operation == "shorten":
                     processed_text = self.gemini_client.shorten_text(original_text)
